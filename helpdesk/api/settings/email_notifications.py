@@ -82,12 +82,18 @@ def get_reply_via_agent_data():
     enable_reply_email_via_agent = bool(
         frappe.db.get_single_value("HD Settings", "enable_reply_email_via_agent")
     )
+    allow_reply_via_agent_template_for_email_tickets = bool(
+        frappe.db.get_single_value(
+            "HD Settings", "allow_reply_via_agent_template_for_email_tickets"
+        )
+    )
     email_content = frappe.db.get_single_value(
         "HD Settings", "reply_via_agent_email_content"
     )
     default_email_content = get_default_email_content("reply_via_agent")
     return {
         "enabled": enable_reply_email_via_agent,
+        "allow_reply_via_agent_template_for_email_tickets": allow_reply_via_agent_template_for_email_tickets,
         "content": get_email_content(email_content, default_email_content),
         "default_content": default_email_content,
     }
@@ -180,11 +186,26 @@ def update_reply_to_agents(enabled: bool, content: str):
 
 
 @frappe.whitelist(methods=["PUT"])
-def update_reply_via_agent(enabled: bool, content: str):
+def update_reply_via_agent(
+    enabled: bool,
+    content: str,
+    allow_reply_via_agent_template_for_email_tickets: bool = False,
+):
     only_for_managers()
-    return set_common_settings(
+    settings = set_common_settings(
         "enable_reply_email_via_agent",
         enabled,
         "reply_via_agent_email_content",
         content,
+    )
+    frappe.db.set_single_value(
+        "HD Settings",
+        "allow_reply_via_agent_template_for_email_tickets",
+        int(allow_reply_via_agent_template_for_email_tickets),
+    )
+    return merge(
+        settings,
+        {
+            "allow_reply_via_agent_template_for_email_tickets": allow_reply_via_agent_template_for_email_tickets,
+        },
     )

@@ -77,6 +77,7 @@
   "reply_email_to_agent_content",
   "reply_from_agent_section",
   "enable_reply_email_via_agent",
+  "allow_reply_via_agent_template_for_email_tickets",
   "reply_via_agent_email_content"
  ],
  "fields": [
@@ -402,6 +403,13 @@
    "label": "Enabled"
   },
   {
+   "default": "0",
+   "description": "If enabled, the Reply From Agent template will also be used for tickets originally created by email.",
+   "fieldname": "allow_reply_via_agent_template_for_email_tickets",
+   "fieldtype": "Check",
+   "label": "Use template for email-generated tickets"
+  },
+  {
    "fieldname": "reply_via_agent_email_content",
    "fieldtype": "Text",
    "label": "Email Content"
@@ -480,7 +488,7 @@
    "fieldname": "disable_saved_replies_global_scope",
    "fieldtype": "Check",
    "label": "Disable saved replies with scope 'Global'"
-     },
+  },
   {
    "fieldname": "section_break_ylvs",
    "fieldtype": "Section Break"
@@ -489,7 +497,7 @@
    "fieldname": "column_break_fzef",
    "fieldtype": "Column Break"
   },
-{
+  {
    "default": "Thanks for reaching out \ud83d\udc4b. This ticket was created outside our working hours. You can expect the next response by {{ next_working_day }}.",
    "depends_on": "enable_outside_hours_banner",
    "fieldname": "outside_working_hours_message",
@@ -509,7 +517,7 @@
  "grid_page_length": 50,
  "issingle": 1,
  "links": [],
- "modified": "2025-12-18 10:37:02.103507",
+ "modified": "2026-04-27 14:58:42.047577",
  "modified_by": "Administrator",
  "module": "Helpdesk",
  "name": "HD Settings",

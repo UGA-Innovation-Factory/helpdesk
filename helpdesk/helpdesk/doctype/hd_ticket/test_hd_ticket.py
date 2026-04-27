@@ -1,6 +1,7 @@
 # Copyright (c) 2023, Frappe Technologies and Contributors
 # See license.txt
 from datetime import timedelta
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -708,6 +709,11 @@ class TestHDTicket(FrappeTestCase):
         frappe.set_user("Administrator")
         remove_holidays()
         frappe.db.set_single_value("HD Settings", "default_ticket_status", "Open")
+        frappe.db.set_single_value(
+            "HD Settings",
+            "allow_reply_via_agent_template_for_email_tickets",
+            0,
+        )
         frappe.delete_doc("HD Ticket Status", "New", force=True)
 
     def test_security_unauthorized_reply_via_agent(self):
@@ -739,3 +745,25 @@ class TestHDTicket(FrappeTestCase):
             get_recent_similar_tickets(ticket.name)
 
         frappe.set_user("Administrator")
+
+    def test_reply_via_agent_template_can_apply_to_email_tickets(self):
+        ticket = make_ticket(via_customer_portal=0, raised_by="customer@example.com")
+        frappe.db.set_single_value("HD Settings", "skip_email_workflow", 0)
+        frappe.db.set_single_value("HD Settings", "enable_reply_email_via_agent", 1)
+        frappe.db.set_single_value(
+            "HD Settings",
+            "allow_reply_via_agent_template_for_email_tickets",
+            1,
+        )
+        frappe.db.set_single_value(
+            "HD Settings",
+            "reply_via_agent_email_content",
+            "Portal template {{ doc.name }} {{ message }} {{ ticket_url }}",
+        )
+
+        with patch("frappe.sendmail") as sendmail:
+            ticket.reply_via_agent(message="Test reply")
+
+        self.assertTrue(sendmail.called)
+        self.assertIn("Portal template", sendmail.call_args.kwargs["message"])
+        self.assertIn("Test reply", sendmail.call_args.kwargs["message"])
