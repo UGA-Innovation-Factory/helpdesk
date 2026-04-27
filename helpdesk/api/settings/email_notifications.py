@@ -2,6 +2,7 @@ from typing import Any, Literal
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 from frappe.utils.jinja import validate_template
 
 from helpdesk.helpdesk.doctype.hd_settings.helpers import (
@@ -20,13 +21,15 @@ def get_email_content(content: str, default_content: str) -> str:
     return content
 
 
+def get_single_bool(fieldname: str) -> bool:
+    return bool(cint(frappe.db.get_single_value("HD Settings", fieldname)))
+
+
 def get_share_feedback_data():
     send_email_feedback_on_status = frappe.db.get_single_value(
         "HD Settings", "send_email_feedback_on_status"
     )
-    enable_email_ticket_feedback = bool(
-        frappe.db.get_single_value("HD Settings", "enable_email_ticket_feedback")
-    )
+    enable_email_ticket_feedback = get_single_bool("enable_email_ticket_feedback")
     feedback_email_content = frappe.db.get_single_value(
         "HD Settings", "feedback_email_content"
     )
@@ -47,9 +50,7 @@ def get_share_feedback_data():
 
 
 def get_acknowledgement_data():
-    send_acknowledgement_email = bool(
-        frappe.db.get_single_value("HD Settings", "send_acknowledgement_email")
-    )
+    send_acknowledgement_email = get_single_bool("send_acknowledgement_email")
     acknowledgement_email_content = frappe.db.get_single_value(
         "HD Settings", "acknowledgement_email_content"
     )
@@ -63,9 +64,30 @@ def get_acknowledgement_data():
     }
 
 
+def get_new_ticket_created_data():
+    send_new_ticket_created_email_to_agent = get_single_bool(
+        "send_new_ticket_created_email_to_agent"
+    )
+    new_ticket_created_email_content = frappe.db.get_single_value(
+        "HD Settings", "new_ticket_created_email_content"
+    )
+    default_new_ticket_created_email_content = get_default_email_content(
+        "new_ticket_created"
+    )
+    return {
+        "enabled": send_new_ticket_created_email_to_agent,
+        "content": get_email_content(
+            new_ticket_created_email_content,
+            default_new_ticket_created_email_content,
+        ),
+        "default_content": default_new_ticket_created_email_content,
+    }
+
+
 def get_reply_to_agents_data():
-    enable_reply_email_to_agent = bool(
-        frappe.db.get_single_value("HD Settings", "enable_reply_email_to_agent")
+    enable_reply_email_to_agent = get_single_bool("enable_reply_email_to_agent")
+    allow_reply_to_agent_template_for_email_tickets = get_single_bool(
+        "allow_reply_to_agent_template_for_email_tickets"
     )
     email_content = frappe.db.get_single_value(
         "HD Settings", "reply_email_to_agent_content"
@@ -73,19 +95,16 @@ def get_reply_to_agents_data():
     default_email_content = get_default_email_content("reply_to_agents")
     return {
         "enabled": enable_reply_email_to_agent,
+        "allow_reply_to_agent_template_for_email_tickets": allow_reply_to_agent_template_for_email_tickets,
         "content": get_email_content(email_content, default_email_content),
         "default_content": default_email_content,
     }
 
 
 def get_reply_via_agent_data():
-    enable_reply_email_via_agent = bool(
-        frappe.db.get_single_value("HD Settings", "enable_reply_email_via_agent")
-    )
-    allow_reply_via_agent_template_for_email_tickets = bool(
-        frappe.db.get_single_value(
-            "HD Settings", "allow_reply_via_agent_template_for_email_tickets"
-        )
+    enable_reply_email_via_agent = get_single_bool("enable_reply_email_via_agent")
+    allow_reply_via_agent_template_for_email_tickets = get_single_bool(
+        "allow_reply_via_agent_template_for_email_tickets"
     )
     email_content = frappe.db.get_single_value(
         "HD Settings", "reply_via_agent_email_content"
@@ -108,6 +127,9 @@ def get_data(notification: str):
 
     if notification == "acknowledgement":
         return get_acknowledgement_data()
+
+    if notification == "new_ticket_created":
+        return get_new_ticket_created_data()
 
     if notification == "reply_to_agents":
         return get_reply_to_agents_data()
@@ -175,13 +197,39 @@ def update_acknowledgement(enabled: bool, content: str):
 
 
 @frappe.whitelist(methods=["PUT"])
-def update_reply_to_agents(enabled: bool, content: str):
+def update_new_ticket_created(enabled: bool, content: str):
     only_for_managers()
     return set_common_settings(
+        "send_new_ticket_created_email_to_agent",
+        enabled,
+        "new_ticket_created_email_content",
+        content,
+    )
+
+
+@frappe.whitelist(methods=["PUT"])
+def update_reply_to_agents(
+    enabled: bool,
+    content: str,
+    allow_reply_to_agent_template_for_email_tickets: bool = False,
+):
+    only_for_managers()
+    settings = set_common_settings(
         "enable_reply_email_to_agent",
         enabled,
         "reply_email_to_agent_content",
         content,
+    )
+    frappe.db.set_single_value(
+        "HD Settings",
+        "allow_reply_to_agent_template_for_email_tickets",
+        int(allow_reply_to_agent_template_for_email_tickets),
+    )
+    return merge(
+        settings,
+        {
+            "allow_reply_to_agent_template_for_email_tickets": allow_reply_to_agent_template_for_email_tickets,
+        },
     )
 
 

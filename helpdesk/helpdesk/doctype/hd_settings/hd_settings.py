@@ -100,6 +100,7 @@ class HDSettings(Document):
         for content_field_name in [
             "feedback_email_content",
             "acknowledgement_email_content",
+            "new_ticket_created_email_content",
             "reply_email_to_agent_content",
             "reply_via_agent_email_content",
         ]:

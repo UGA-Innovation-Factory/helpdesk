@@ -12,14 +12,29 @@
     :onBack="props.onBack"
     :onSubmit="onSubmit"
     :onGetDataSuccess="onGetDataSuccess"
-  />
+  >
+    <template #formFields>
+      <Switch
+        size="sm"
+        :label="__('Use template for email-generated tickets')"
+        v-model="allowReplyToAgentTemplateForEmailTickets"
+        @update:model-value="compRef?.setUnsavedChanges()"
+        :style="{ background: 'transparent', padding: '0px' }"
+        class="max-w-fit"
+      />
+    </template>
+  </Notification>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
 import Notification from "./Notification.vue";
-import { createResource } from "frappe-ui";
-import type { BaseSettings, Notification as NotificationType } from "./types";
+import { __ } from "@/translation";
+import { createResource, Switch } from "frappe-ui";
+import type {
+  Notification as NotificationType,
+  ReplyToAgentsSettings,
+} from "./types";
 
 const props = defineProps<{
   onBack: () => void;
@@ -29,16 +44,19 @@ const props = defineProps<{
 const content = ref("");
 const defaultContent = ref("");
 const enabled = ref(false);
+const allowReplyToAgentTemplateForEmailTickets = ref(false);
 const compRef = ref<InstanceType<typeof Notification>>();
 
 const updateSettings = createResource({
   url: "helpdesk.api.settings.email_notifications.update_reply_to_agents",
   method: "PUT",
   auto: false,
-  onSuccess(data: BaseSettings) {
+  onSuccess(data: ReplyToAgentsSettings) {
     enabled.value = data.enabled;
     content.value = data.content;
-    compRef.value.resetUnsavedChanges();
+    allowReplyToAgentTemplateForEmailTickets.value =
+      data.allow_reply_to_agent_template_for_email_tickets;
+    compRef.value?.resetUnsavedChanges();
   },
 });
 
@@ -46,12 +64,18 @@ function onSubmit() {
   return updateSettings.submit({
     enabled: enabled.value,
     content: content.value,
+    allow_reply_to_agent_template_for_email_tickets:
+      allowReplyToAgentTemplateForEmailTickets.value,
   });
 }
 
-function onGetDataSuccess(data: BaseSettings & { default_content: string }) {
+function onGetDataSuccess(
+  data: ReplyToAgentsSettings & { default_content: string }
+) {
   enabled.value = data.enabled;
   content.value = data.content;
+  allowReplyToAgentTemplateForEmailTickets.value =
+    data.allow_reply_to_agent_template_for_email_tickets;
   defaultContent.value = data.default_content;
 }
 </script>

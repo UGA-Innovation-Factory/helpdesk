@@ -25,21 +25,6 @@
             >
               {{ notification.description }}
             </p>
-            <div
-              v-if="notification.name === 'reply_via_agent'"
-              class="relative z-20 mt-2"
-              @click.stop
-            >
-              <Switch
-                size="sm"
-                :label="__('Use template for email-generated tickets')"
-                v-model="allowReplyViaAgentTemplateForEmailTickets"
-                :disabled="replyViaAgentSettings.loading || updateReplyViaAgentSettings.loading"
-                @update:model-value="onToggleReplyViaAgentTemplateForEmailTickets"
-                :style="{ background: 'transparent', padding: '0px' }"
-                class="max-w-fit"
-              />
-            </div>
           </div>
           <FeatherIcon
             name="chevron-right"
@@ -134,6 +119,13 @@ const notifications: AtLeastOneNotifcation = [
     name: "acknowledgement",
     label: __("Acknowledgement"),
     description: __("Sent to the user right after creating an email ticket"),
+  },
+  {
+    name: "new_ticket_created",
+    label: __("New ticket created"),
+    description: __(
+      "Sent to assigned agents after a new ticket is created"
+    ),
   },
   {
     name: "reply_to_agents",

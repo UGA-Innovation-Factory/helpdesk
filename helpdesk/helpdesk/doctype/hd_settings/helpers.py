@@ -29,6 +29,38 @@ def get_default_email_content(type: str) -> str:
 <p>Best,<br />Support Team</p>
 """
 
+    if type == "new_ticket_created":
+        return """\
+<div>
+  <p>Hello,</p>
+  <p>A new ticket has been assigned to you.</p>
+  <p><strong>Ticket ID:</strong> {{ doc.name }}</p>
+  <p><strong>Subject:</strong> {{ doc.subject }}</p>
+  <p><strong>Raised By:</strong> {{ doc.raised_by }}</p>
+  <p><strong>Priority:</strong> {{ doc.priority }}</p>
+  <div style="margin: 16px 0;">
+    <h3 style="margin-bottom: 8px;">Message</h3>
+    <div
+      style="
+        background: #f3f5f8;
+        padding: 10px;
+        border-radius: 4px;
+        border: 1px solid #e5e9ee;
+      "
+    >
+      {{ message }}
+    </div>
+  </div>
+
+  <br />
+  <p>
+    You can review and respond to this ticket by
+    <a href="{{ ticket_url }}">clicking here</a>.
+  </p>
+  <p>Regards,<br />Support Team</p>
+</div>
+"""
+
     if type == "reply_to_agents":
         return """\
 <div>

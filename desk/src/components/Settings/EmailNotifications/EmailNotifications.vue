@@ -15,6 +15,7 @@ import { type Component, markRaw, ref } from "vue";
 import type { Notification, NotificationName } from "./types";
 import NotificationList from "./NotificationList.vue";
 import Acknowledgement from "./Acknowledgement.vue";
+import NewTicketCreated from "./NewTicketCreated.vue";
 import ReplyViaAgent from "./ReplyViaAgent.vue";
 import ShareFeedback from "./ShareFeedback.vue";
 import ReplyToAgents from "./ReplyToAgents.vue";
@@ -27,6 +28,7 @@ const notificationToComponent: Record<
 > = {
   share_feedback: markRaw(ShareFeedback),
   acknowledgement: markRaw(Acknowledgement),
+  new_ticket_created: markRaw(NewTicketCreated),
   reply_to_agents: markRaw(ReplyToAgents),
   reply_via_agent: markRaw(ReplyViaAgent),
 };

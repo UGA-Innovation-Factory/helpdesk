@@ -72,8 +72,12 @@
   "acknowledgement_section",
   "send_acknowledgement_email",
   "acknowledgement_email_content",
+  "new_ticket_created_section",
+  "send_new_ticket_created_email_to_agent",
+  "new_ticket_created_email_content",
   "reply_from_contact_section",
   "enable_reply_email_to_agent",
+  "allow_reply_to_agent_template_for_email_tickets",
   "reply_email_to_agent_content",
   "reply_from_agent_section",
   "enable_reply_email_via_agent",
@@ -384,11 +388,35 @@
    "label": "Enabled"
   },
   {
+   "fieldname": "new_ticket_created_section",
+   "fieldtype": "Section Break",
+   "label": "New Ticket Created"
+  },
+  {
+   "default": "0",
+   "description": "If enabled, an email with the new ticket details will be sent to assigned agents after the ticket is created",
+   "fieldname": "send_new_ticket_created_email_to_agent",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "new_ticket_created_email_content",
+   "fieldtype": "Text",
+   "label": "Email Content"
+  },
+  {
    "default": "1",
    "description": "If enabled, an email will be sent to all of the assigned agents after a reply from one of the contacts",
    "fieldname": "enable_reply_email_to_agent",
    "fieldtype": "Check",
    "label": "Enabled"
+  },
+  {
+   "default": "0",
+   "description": "If enabled, the Reply From Contact template will also be used for tickets originally created by email.",
+   "fieldname": "allow_reply_to_agent_template_for_email_tickets",
+   "fieldtype": "Check",
+   "label": "Use template for email-generated tickets"
   },
   {
    "fieldname": "reply_email_to_agent_content",

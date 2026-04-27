@@ -767,3 +767,189 @@ class TestHDTicket(FrappeTestCase):
         self.assertTrue(sendmail.called)
         self.assertIn("Portal template", sendmail.call_args.kwargs["message"])
         self.assertIn("Test reply", sendmail.call_args.kwargs["message"])
+
+    def test_new_ticket_created_email_is_sent_to_assigned_agent(self):
+        ticket = make_ticket(via_customer_portal=0, raised_by="customer@example.com")
+        ticket.assign_agent(agent)
+        frappe.db.set_single_value(
+            "HD Settings", "send_new_ticket_created_email_to_agent", 1
+        )
+        frappe.db.set_single_value(
+            "HD Settings",
+            "new_ticket_created_email_content",
+            "New ticket template {{ doc.name }} {{ ticket_url }}",
+        )
+
+        with patch("frappe.sendmail") as sendmail:
+            ticket.send_new_ticket_created_email_to_agent()
+
+        self.assertTrue(sendmail.called)
+        self.assertEqual(sendmail.call_args.kwargs["recipients"], [agent])
+        self.assertIn("New ticket template", sendmail.call_args.kwargs["message"])
+        self.assertIn(ticket.name, sendmail.call_args.kwargs["message"])
+        self.assertIn("This is a test ticket.", sendmail.call_args.kwargs["message"])
+
+    def test_initial_received_communication_does_not_notify_reply_to_agents(self):
+        ticket = make_ticket(via_customer_portal=0, raised_by="customer@example.com")
+        ticket.assign_agent(agent)
+        frappe.db.set_single_value("HD Settings", "enable_reply_email_to_agent", 1)
+        frappe.db.set_single_value(
+            "HD Settings",
+            "allow_reply_to_agent_template_for_email_tickets",
+            1,
+        )
+
+        initial_communication = frappe.get_last_doc(
+            "Communication",
+            filters={
+                "reference_doctype": "HD Ticket",
+                "reference_name": ticket.name,
+            },
+        )
+
+        with patch("frappe.sendmail") as sendmail:
+            ticket.notify_agents_for_received_email_reply(initial_communication)
+
+        self.assertFalse(sendmail.called)
+
+    def test_reply_from_contact_template_can_apply_to_email_tickets(self):
+        ticket = make_ticket(via_customer_portal=0, raised_by="customer@example.com")
+        ticket.assign_agent(agent)
+        frappe.db.set_single_value("HD Settings", "enable_reply_email_to_agent", 1)
+        frappe.db.set_single_value(
+            "HD Settings",
+            "allow_reply_to_agent_template_for_email_tickets",
+            1,
+        )
+        frappe.db.set_single_value(
+            "HD Settings",
+            "reply_email_to_agent_content",
+            "Contact template {{ doc.name }} {{ message }} {{ ticket_url }}",
+        )
+
+        communication = frappe.get_doc(
+            {
+                "doctype": "Communication",
+                "communication_type": "Communication",
+                "communication_medium": "Email",
+                "sent_or_received": "Received",
+                "email_status": "Open",
+                "subject": f"Re: {ticket.subject}",
+                "sender": "customer@example.com",
+                "content": "Inbound reply",
+                "status": "Linked",
+                "reference_doctype": "HD Ticket",
+                "reference_name": ticket.name,
+            }
+        )
+
+        with patch("frappe.sendmail") as sendmail:
+            communication.insert(ignore_permissions=True)
+
+        self.assertTrue(sendmail.called)
+        self.assertIn("Contact template", sendmail.call_args.kwargs["message"])
+        self.assertIn("Inbound reply", sendmail.call_args.kwargs["message"])
+
+    def test_reply_from_contact_notification_is_not_resent_on_communication_save(self):
+        ticket = make_ticket(via_customer_portal=0, raised_by="customer@example.com")
+        ticket.assign_agent(agent)
+        frappe.db.set_single_value("HD Settings", "enable_reply_email_to_agent", 1)
+        frappe.db.set_single_value(
+            "HD Settings",
+            "allow_reply_to_agent_template_for_email_tickets",
+            1,
+        )
+
+        communication = frappe.get_doc(
+            {
+                "doctype": "Communication",
+                "communication_type": "Communication",
+                "communication_medium": "Email",
+                "sent_or_received": "Received",
+                "email_status": "Open",
+                "subject": f"Re: {ticket.subject}",
+                "sender": "customer@example.com",
+                "content": "Inbound reply",
+                "status": "Linked",
+                "reference_doctype": "HD Ticket",
+                "reference_name": ticket.name,
+            }
+        )
+
+        with patch("frappe.sendmail") as sendmail:
+            communication.insert(ignore_permissions=True)
+            communication.content = "Inbound reply updated"
+            communication.save(ignore_permissions=True)
+
+        self.assertEqual(sendmail.call_count, 1)
+
+    def test_incoming_agent_email_reply_is_sent_to_contact(self):
+        ticket = make_ticket(via_customer_portal=0, raised_by="customer@example.com")
+        ticket.assign_agent(agent)
+        frappe.db.set_single_value("HD Settings", "skip_email_workflow", 0)
+        frappe.db.set_single_value("HD Settings", "enable_reply_email_via_agent", 1)
+
+        communication = frappe.get_doc(
+            {
+                "doctype": "Communication",
+                "communication_type": "Communication",
+                "communication_medium": "Email",
+                "sent_or_received": "Received",
+                "email_status": "Open",
+                "subject": f"Re: {ticket.subject}",
+                "sender": agent,
+                "content": "Agent email response",
+                "status": "Linked",
+                "reference_doctype": "HD Ticket",
+                "reference_name": ticket.name,
+            }
+        )
+        communication.flags.in_receive = True
+
+        with patch("frappe.sendmail") as sendmail:
+            communication.insert(ignore_permissions=True)
+
+        self.assertEqual(sendmail.call_count, 1)
+        self.assertEqual(sendmail.call_args.kwargs["recipients"], "customer@example.com")
+        self.assertIn("Agent email response", sendmail.call_args.kwargs["message"])
+
+        sent_communication = frappe.get_last_doc(
+            "Communication",
+            filters={
+                "reference_doctype": "HD Ticket",
+                "reference_name": ticket.name,
+                "sent_or_received": "Sent",
+            },
+        )
+        self.assertEqual(sent_communication.sender, agent)
+
+    def test_reply_from_contact_template_does_not_apply_to_email_tickets_when_disabled(self):
+        ticket = make_ticket(via_customer_portal=0, raised_by="customer@example.com")
+        ticket.assign_agent(agent)
+        frappe.db.set_single_value("HD Settings", "enable_reply_email_to_agent", 1)
+        frappe.db.set_single_value(
+            "HD Settings",
+            "allow_reply_to_agent_template_for_email_tickets",
+            0,
+        )
+
+        communication = frappe.get_doc(
+            {
+                "doctype": "Communication",
+                "communication_type": "Communication",
+                "communication_medium": "Email",
+                "sent_or_received": "Received",
+                "email_status": "Open",
+                "subject": f"Re: {ticket.subject}",
+                "sender": "customer@example.com",
+                "content": "Inbound reply",
+                "status": "Linked",
+                "reference_doctype": "HD Ticket",
+                "reference_name": ticket.name,
+            }
+        )
+
+        with patch("frappe.sendmail") as sendmail:
+            communication.insert(ignore_permissions=True)
+
+        self.assertFalse(sendmail.called)

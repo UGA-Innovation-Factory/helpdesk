@@ -14,7 +14,7 @@ from frappe.desk.form.assign_to import get as get_assignees
 from frappe.model.document import Document
 from frappe.permissions import add_permission, update_permission_property
 from frappe.query_builder import DocType, Order
-from frappe.utils import add_to_date, getdate, now_datetime
+from frappe.utils import add_to_date, getdate, now_datetime, time_diff_in_seconds
 from pypika.functions import Count
 from pypika.queries import Query
 from pypika.terms import Criterion
@@ -119,6 +119,69 @@ class HDTicket(Document):
             template_args,
         )
 
+    def _replace_unrendered_message_placeholders(
+        self, rendered_template: str, message: str
+    ):
+        if not message:
+            return rendered_template
+
+        return (
+            rendered_template.replace("{{ message }}", message)
+            .replace("{{message}}", message)
+            .replace("{{ ticket_message }}", message)
+            .replace("{{ticket_message}}", message)
+        )
+
+    def get_agent_user_from_email(self, email: str | None):
+        if not email:
+            return None
+
+        sender_email = parseaddr(email)[1] or email
+        user = frappe.db.get_value("User", {"email": sender_email}, "name")
+        if not user:
+            return None
+
+        if user == "Administrator":
+            return user
+
+        roles = set(frappe.get_roles(user))
+        if "Agent" in roles or "Agent Manager" in roles:
+            return user
+
+        if frappe.db.exists("HD Agent", {"user": user}):
+            return user
+
+        return None
+
+    def handle_incoming_agent_email_reply(self, communication):
+        if not getattr(communication.flags, "in_receive", False):
+            return False
+
+        agent_user = self.get_agent_user_from_email(communication.sender)
+        if not agent_user:
+            return False
+
+        attachments = frappe.get_all(
+            "File",
+            filters={
+                "attached_to_doctype": "Communication",
+                "attached_to_name": communication.name,
+            },
+            pluck="name",
+        )
+
+        current_user = frappe.session.user
+        try:
+            frappe.set_user(agent_user)
+            self.reply_via_agent(
+                message=communication.content,
+                attachments=attachments,
+            )
+        finally:
+            frappe.set_user(current_user)
+
+        return True
+
     def handle_email_feedback(self):
         if (
             self.is_new()
@@ -189,6 +252,14 @@ class HDTicket(Document):
             and send_ack_email
         ):
             self.send_acknowledgement_email()
+
+        if frappe.db.get_single_value(
+            "HD Settings", "send_new_ticket_created_email_to_agent"
+        ):
+            ticket_name = self.name
+            frappe.db.after_commit.add(
+                lambda: frappe.get_doc("HD Ticket", ticket_name).send_new_ticket_created_email_to_agent()
+            )
 
     def capture_ticket_created_telemetry_events(self):
         if self.subject == "Welcome to Helpdesk":
@@ -698,7 +769,7 @@ class HDTicket(Document):
             "HD Settings", "enable_reply_email_to_agent"
         ):
             # send email to assigned agents
-            self.send_reply_email_to_agent()
+            self.send_reply_email_to_agent(message)
 
         # if self.status_category == "Paused" and not new_ticket:
         if not new_ticket:
@@ -758,29 +829,36 @@ class HDTicket(Document):
                 doc.attached_to_name = self.name
                 doc.save()
 
-    def send_reply_email_to_agent(self):
+    def send_reply_email_to_agent(self, message: str | None = None):
         assigned_agents = self.get_assigned_agents()
         if not assigned_agents:
             return
 
         recipients = [a.get("name") for a in self.get_assigned_agents()]
+        parsed_message = self.parse_content(message)
 
         email_content = frappe.db.get_single_value(
             "HD Settings", "reply_email_to_agent_content"
         )
         default_email_content = get_default_email_content("reply_to_agents")
         try:
+            rendered_template = self._get_rendered_template(
+                email_content,
+                default_email_content,
+                {
+                    "message": parsed_message,
+                    "ticket_message": parsed_message,
+                    "ticket_url": frappe.utils.get_url(
+                        "/helpdesk/tickets/" + str(self.name)
+                    ),
+                },
+            )
             frappe.sendmail(
                 recipients=recipients,
                 subject=f"Re: {self.subject} - #{self.name}",
-                message=self._get_rendered_template(
-                    email_content,
-                    default_email_content,
-                    {
-                        "ticket_url": frappe.utils.get_url(
-                            "/helpdesk/tickets/" + str(self.name)
-                        )
-                    },
+                message=self._replace_unrendered_message_placeholders(
+                    rendered_template,
+                    parsed_message,
                 ),
                 reference_doctype="HD Ticket",
                 reference_name=self.name,
@@ -788,6 +866,86 @@ class HDTicket(Document):
             )
         except Exception as e:
             frappe.throw(_(e))
+
+    def send_new_ticket_created_email_to_agent(self):
+        assigned_agents = self.get_assigned_agents()
+        if not assigned_agents:
+            return
+
+        recipients = [agent.get("name") for agent in assigned_agents]
+        message = self.parse_content(self.description)
+
+        email_content = frappe.db.get_single_value(
+            "HD Settings", "new_ticket_created_email_content"
+        )
+        default_email_content = get_default_email_content("new_ticket_created")
+        try:
+            rendered_template = self._get_rendered_template(
+                email_content,
+                default_email_content,
+                {
+                    "message": message,
+                    "ticket_message": message,
+                    "ticket_url": frappe.utils.get_url(
+                        "/helpdesk/tickets/" + str(self.name)
+                    ),
+                },
+            )
+            frappe.sendmail(
+                recipients=recipients,
+                subject=_("New ticket #{0}: {1}").format(self.name, self.subject),
+                message=self._replace_unrendered_message_placeholders(
+                    rendered_template,
+                    message,
+                ),
+                reference_doctype="HD Ticket",
+                reference_name=self.name,
+                now=True,
+            )
+        except Exception as e:
+            frappe.throw(_(e))
+
+    def notify_agents_for_received_email_reply(self, communication):
+        if communication.sent_or_received != "Received":
+            return
+
+        if self.is_initial_received_communication(communication):
+            return
+
+        if self.via_customer_portal:
+            return
+
+        if communication.communication_medium != "Email":
+            return
+
+        if not frappe.db.get_single_value(
+            "HD Settings", "enable_reply_email_to_agent"
+        ):
+            return
+
+        if not frappe.db.get_single_value(
+            "HD Settings", "allow_reply_to_agent_template_for_email_tickets"
+        ):
+            return
+
+        self.send_reply_email_to_agent(communication.content)
+
+    def is_initial_received_communication(self, communication):
+        if communication.sent_or_received != "Received":
+            return False
+
+        other_communication_exists = frappe.db.exists(
+            "Communication",
+            {
+                "reference_doctype": "HD Ticket",
+                "reference_name": self.name,
+                "name": ["!=", communication.name],
+            },
+        )
+        if other_communication_exists:
+            return False
+
+        return abs(time_diff_in_seconds(communication.creation, self.creation)) <= 5
 
     def send_acknowledgement_email(self):
         acknowledgement_email_content = frappe.db.get_single_value(
@@ -956,6 +1114,13 @@ class HDTicket(Document):
         # be reopened.
         # handle re opening tickets for email
         if c.sent_or_received == "Received":
+            if c.creation != c.modified:
+                return
+
+            if self.handle_incoming_agent_email_reply(c):
+                return
+
+            self.notify_agents_for_received_email_reply(c)
             # check if agent has replied
 
             if self.has_agent_replied:
